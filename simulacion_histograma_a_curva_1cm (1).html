@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación Interactiva: Del Histograma a la Curva</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        h1 {
+            color: #2c3e50;
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        p.subtitle {
+            color: #7f8c8d;
+            margin-top: 0;
+            margin-bottom: 25px;
+            font-size: 15px;
+        }
+        .canvas-container {
+            position: relative;
+            margin: auto;
+            height: 400px;
+            width: 100%;
+        }
+        .btn-container {
+            margin-top: 30px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        .btn-anchas { background-color: #e74c3c; color: white; }
+        .btn-anchas:hover { background-color: #c0392b; }
+        .btn-finas { background-color: #f39c12; color: white; }
+        .btn-finas:hover { background-color: #d35400; }
+        .btn-curva { background-color: #3498db; color: white; }
+        .btn-curva:hover { background-color: #2980b9; }
+        .btn-todo { background-color: #2ecc71; color: white; }
+        .btn-todo:hover { background-color: #27ae60; }
+        
+        .info-box {
+            margin-top: 25px;
+            padding: 15px;
+            background-color: #ebf5fb;
+            border-left: 5px solid #3498db;
+            border-radius: 4px;
+            text-align: left;
+            font-size: 14.5px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📈 Simulación: Del Histograma a la Curva Continua</h1>
+    <p class="subtitle">Estudio conceptual de la variable aleatoria: <strong>Altura de los alumnos (cm)</strong></p>
+    
+    <div class="canvas-container">
+        <canvas id="simulationChart"></canvas>
+    </div>
+    
+    <div class="btn-container">
+        <button class="btn-anchas" onclick="showState('anchas')">🔴 1. Barras Anchas (140, 150, 160...)</button>
+        <button class="btn-finas" onclick="showState('finas')">🟡 2. Barras Finas (2 cm)</button>
+        <button style="background-color:#9b59b6;color:white" onclick="showState('intermedias')">🟣 3. Barras Intermedias (1 cm)</button>
+        <button class="btn-curva" onclick="showState('curva')">🔵 4. Curva Continua</button>
+        <button class="btn-todo" onclick="showState('todo')">🟢 5. Ver Todo Superpuesto</button>
+    </div>
+    
+    <div class="info-box" id="infoText">
+        Haz clic en los botones para ver cómo la probabilidad cambia de forma al refinar la medición de la altura.
+    </div>
+</div>
+
+<script>
+    // Data Generation
+    const labelsAnchas = ['130-140', '140-150', '150-160', '160-170', '170-180', '180-190', '190-200'];
+    const dataAnchas = [2, 8, 22, 36, 24, 7, 1]; // Sum = 100%
+
+    // Fine bars data (approximate normal spacing)
+    const labelsFinas = [];
+    const dataFinas = [];
+    for(let h=130; h<=200; h+=2) {
+        labelsFinas.push(`${h}-${h+2}`);
+        // Math normal distribution formula approximation
+        let exponent = -Math.pow((h+1) - 165, 2) / (2 * Math.pow(12, 2));
+        let prob = (1 / (12 * Math.sqrt(2 * Math.PI))) * Math.exp(exponent) * 100 * 2;
+        dataFinas.push(parseFloat(prob.toFixed(2)));
+    }
+
+    // Intermediate histogram data (intervals of 1 cm)
+    const labelsIntermedias = [];
+    const dataIntermedias = [];
+    for(let h=130; h<200; h+=1) {
+        labelsIntermedias.push(`${h}-${h+1}`);
+        let exponent = -Math.pow((h+0.5) - 165, 2) / (2 * Math.pow(12, 2));
+        let prob = (1 / (12 * Math.sqrt(2 * Math.PI))) * Math.exp(exponent) * 100 * 1;
+        dataIntermedias.push(parseFloat(prob.toFixed(2)));
+    }
+
+    // Curve sampled at the same 1 cm interval midpoints as the intermediate histogram.
+    // Multiplying the density by the bin width (1 cm) makes the heights comparable.
+    const labelsCurva = labelsIntermedias;
+    const dataCurva = dataIntermedias.map((_, i) => {
+        const h = 130 + i + 0.5;
+        const exponent = -Math.pow(h - 165, 2) / (2 * Math.pow(12, 2));
+        return (1 / (12 * Math.sqrt(2 * Math.PI))) * Math.exp(exponent) * 100 * 1;
+    });
+
+    const ctx = document.getElementById('simulationChart').getContext('2d');
+    
+    // Base Chart Config
+    let chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labelsAnchas,
+            datasets: [{
+                label: 'Barras Anchas (Intervalos de 10 cm)',
+                data: dataAnchas,
+                backgroundColor: 'rgba(231, 76, 60, 0.6)',
+                borderColor: 'rgba(231, 76, 60, 1)',
+                borderWidth: 1,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Probabilidad (%)', font: { weight: 'bold' } }
+                },
+                x: {
+                    title: { display: true, text: 'Altura del alumno (cm)', font: { weight: 'bold' } }
+                }
+            },
+            plugins: {
+                legend: { position: 'top' }
+            }
+        }
+    });
+
+    function showState(state) {
+        const info = document.getElementById('infoText');
+        
+        if (state === 'anchas') {
+            chart.data.labels = labelsAnchas;
+            chart.data.datasets = [{
+                type: 'bar',
+                label: 'Barras Anchas (Intervalos Enteros de 10cm)',
+                data: dataAnchas,
+                backgroundColor: 'rgba(231, 76, 60, 0.6)',
+                borderColor: 'rgba(231, 76, 60, 1)',
+                borderWidth: 1,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0,
+            }];
+            info.innerHTML = "<strong>🔴 Paso 1: Barras Anchas.</strong> Al medir con poca precisión (de 10 en 10 cm: 140, 150, 160...), los datos se agrupan en pocos bloques. El gráfico tiene un aspecto <strong>rudo y escalonado</strong>. Las probabilidades son valores en bloques fijos.";
+        } 
+        else if (state === 'finas') {
+            chart.data.labels = labelsFinas;
+            chart.data.datasets = [{
+                type: 'bar',
+                label: 'Barras Finas (Intervalos de 2cm)',
+                data: dataFinas,
+                backgroundColor: 'rgba(243, 156, 18, 0.5)',
+                borderColor: 'rgba(243, 156, 18, 1)',
+                borderWidth: 1,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0,
+            }];
+            info.innerHTML = "<strong>🟡 Paso 2: Barras Finas.</strong> Si medimos a miles de alumnos con mayor precisión (en tramos de 2 cm), las barras se multiplican y se estrechan. Los escalones individuales empiezan a desvanecerse y el perfil se vuelve mucho más <strong>armónico y definido</strong>.";
+        } 
+        else if (state === 'intermedias') {
+            chart.data.labels = labelsIntermedias;
+            chart.data.datasets = [{
+                type: 'bar',
+                label: 'Barras Intermedias (Intervalos de 1 cm)',
+                data: dataIntermedias,
+                backgroundColor: 'rgba(155, 89, 182, 0.45)',
+                borderColor: 'rgba(155, 89, 182, 1)',
+                borderWidth: 1,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0
+            }];
+            info.innerHTML = "<strong>🟣 Paso 3: Barras Intermedias.</strong> Al reducir los intervalos de 2 cm a 1 cm, aparecen el doble de barras, cada una más estrecha. El contorno del histograma se aproxima todavía más al perfil de la distribución, haciendo más gradual el paso hacia la curva continua.";
+        }
+        else if (state === 'curva') {
+            chart.data.labels = labelsCurva;
+            chart.data.datasets = [{
+                type: 'line',
+                label: 'Curva de Distribución Continua',
+                data: dataCurva,
+                borderColor: 'rgba(52, 152, 219, 1)',
+                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                fill: true,
+                borderWidth: 3,
+                pointRadius: 0,
+                tension: 0.4
+            }];
+            info.innerHTML = "<strong>🔵 Paso 4: Curva Continua.</strong> La curva se representa ahora sobre los mismos intervalos de 1 cm que el histograma intermedio y usa sus puntos medios. Así, las alturas son comparables: la línea muestra el perfil suave al que se aproxima el histograma al estrechar los intervalos.";
+        } 
+        else if (state === 'todo') {
+            // Overlay the 1 cm histogram and its matching theoretical curve on the same axis.
+            chart.data.labels = labelsIntermedias;
+            chart.data.datasets = [
+                {
+                    type: 'bar',
+                    label: 'Histograma (intervalos de 1 cm)',
+                    data: dataIntermedias,
+                    backgroundColor: 'rgba(155, 89, 182, 0.30)',
+                    borderColor: 'rgba(155, 89, 182, 0.75)',
+                    borderWidth: 1,
+                    barPercentage: 1.0,
+                    categoryPercentage: 1.0,
+                },
+                {
+                    type: 'line',
+                    label: 'Modelo teórico (curva continua)',
+                    data: dataCurva,
+                    borderColor: 'rgba(52, 152, 219, 1)',
+                    backgroundColor: 'transparent',
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    tension: 0.4
+                }
+            ];
+            info.innerHTML = "<strong>🟢 Paso 5: Superposición.</strong> Se comparan el histograma de intervalos de 1 cm y la curva teórica calculada para esos mismos intervalos y puntos medios. Ambas series comparten escala y unidades, por lo que la aproximación se aprecia de forma coherente.";
+        }
+        
+        chart.update();
+    }
+    
+    // Initialize first state
+    showState('anchas');
+</script>
+
+</body>
+</html>
